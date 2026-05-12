@@ -1,0 +1,28 @@
+{
+  "name": "traffic-visualization",
+  "version": "1.0.0",
+  "description": "Traffic data visualization system using Vue.js and ECharts",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.3.0",
+    "echarts": "^5.4.3",
+    "vue-echarts": "^6.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.0.0",
+    "vite": "^4.0.0"
+  },
+  "keywords": [
+    "vue",
+    "echarts",
+    "visualization",
+    "traffic"
+  ],
+  "author": "",
+  "license": "MIT"
+}
