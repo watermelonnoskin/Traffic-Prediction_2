@@ -1,0 +1,18 @@
+
+# 大型数据文件
+*.npy
+*.npz
+*.csv
+*.h5
+*.pkl
+
+# 虚拟环境
+venv/
+env/
+__pycache__/
+*.pyc
+
+# 模型
+*.pt
+*.pth
+*.ckpt
