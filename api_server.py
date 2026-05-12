@@ -66,8 +66,11 @@ def get_data_info(city):
         ]
     }
 
-def get_timestep_for_date(city, date_str, hour=0):
-    """根据日期字符串获取时间步索引"""
+def get_timestep_for_date(city, date_str, hour=0, granularity='1h'):
+    """
+    根据日期字符串获取时间步索引
+    granularity: '15min', '30min', '1h'
+    """
     data, _ = load_city_data(city)
     if data is None:
         return None
@@ -81,8 +84,18 @@ def get_timestep_for_date(city, date_str, hour=0):
         if days_diff < 0:
             return None
         
-        # 计算时间步索引 (每小时一个点)
-        timestep = days_diff * 24 + hour
+        # 根据粒度计算时间步索引
+        # 数据是小时级，需要转换
+        if granularity == '15min':
+            # 15分钟粒度：每小时4个点
+            timestep = days_diff * 24 * 4 + hour * 4
+        elif granularity == '30min':
+            # 30分钟粒度：每小时2个点
+            timestep = days_diff * 24 * 2 + hour * 2
+        else:  # '1h'
+            # 1小时粒度：每小时1个点
+            timestep = days_diff * 24 + hour
+        
         num_timestamps = data.shape[0]
         
         if timestep >= num_timestamps:
@@ -190,50 +203,97 @@ def get_model_performance():
 @app.route('/api/traffic/flow', methods=['GET'])
 def get_traffic_flow():
     """
-    获取交通流量趋势数据（24小时）
-    支持从真实数据文件中提取指定日期的流量趋势
+    获取交通流量趋势数据
+    支持不同粒度：15min, 30min, 1h
     """
     try:
         city = request.args.get('city', 'nyc')
         date_str = request.args.get('date', None)  # 格式: YYYY-MM-DD
+        granularity = request.args.get('granularity', '1h')  # '15min', '30min', '1h'
         
         # 尝试从真实数据加载
         data, _ = load_city_data(city)
         
+        # 根据粒度确定时间点数量
+        if granularity == '15min':
+            num_points = 96  # 24小时 * 4
+            time_format = lambda h, m: f'{h:02d}:{m:02d}'
+        elif granularity == '30min':
+            num_points = 48  # 24小时 * 2
+            time_format = lambda h, m: f'{h:02d}:{m:02d}'
+        else:  # '1h'
+            num_points = 24
+            time_format = lambda h, m: f'{h:02d}:00'
+        
         if data is not None and date_str:
             # 从真实数据提取
-            hours = []
+            times = []
             city_flow = []
             
-            for hour in range(24):
-                timestep = get_timestep_for_date(city, date_str, hour)
-                if timestep is not None and timestep < data.shape[0]:
-                    # 使用第一个特征作为流量指标（通常是流量）
-                    # 对所有区域求和得到城市总流量
-                    total_flow = float(np.sum(data[timestep, :, 0]))
-                    hours.append(f'{hour}:00')
-                    city_flow.append(round(total_flow, 2))
-                else:
-                    # 超出数据范围，使用模拟数据
-                    hours.append(f'{hour}:00')
-                    city_flow.append(round(500 + np.random.randint(-100, 400), 2))
+            for i in range(num_points):
+                if granularity == '15min':
+                    hour = i // 4
+                    minute = (i % 4) * 15
+                    timestep = get_timestep_for_date(city, date_str, hour, granularity='1h')
+                    # 15分钟粒度需要对小时数据进行插值
+                    if timestep is not None and timestep < data.shape[0]:
+                        # 简单插值：使用小时数据加上随机波动
+                        base_flow = float(np.sum(data[timestep, :, 0]))
+                        flow = base_flow * (1 + np.random.uniform(-0.05, 0.05))
+                        times.append(time_format(hour, minute))
+                        city_flow.append(round(flow, 2))
+                    else:
+                        times.append(time_format(hour, minute))
+                        city_flow.append(round(500 + np.random.randint(-100, 400), 2))
+                elif granularity == '30min':
+                    hour = i // 2
+                    minute = (i % 2) * 30
+                    timestep = get_timestep_for_date(city, date_str, hour, granularity='1h')
+                    if timestep is not None and timestep < data.shape[0]:
+                        base_flow = float(np.sum(data[timestep, :, 0]))
+                        flow = base_flow * (1 + np.random.uniform(-0.03, 0.03))
+                        times.append(time_format(hour, minute))
+                        city_flow.append(round(flow, 2))
+                    else:
+                        times.append(time_format(hour, minute))
+                        city_flow.append(round(500 + np.random.randint(-100, 400), 2))
+                else:  # '1h'
+                    timestep = get_timestep_for_date(city, date_str, i, granularity='1h')
+                    if timestep is not None and timestep < data.shape[0]:
+                        total_flow = float(np.sum(data[timestep, :, 0]))
+                        times.append(time_format(i, 0))
+                        city_flow.append(round(total_flow, 2))
+                    else:
+                        times.append(time_format(i, 0))
+                        city_flow.append(round(500 + np.random.randint(-100, 400), 2))
             
             return jsonify({
-                'hours': hours,
+                'hours': times,
                 'city': city,
                 'date': date_str,
+                'granularity': granularity,
                 'is_real_data': True,
                 city: city_flow
             })
         else:
             # 返回模拟数据
-            hours = [f'{i}:00' for i in range(24)]
+            if granularity == '15min':
+                num_points = 96
+                times = [f'{i//4:02d}:{(i%4)*15:02d}' for i in range(num_points)]
+            elif granularity == '30min':
+                num_points = 48
+                times = [f'{i//2:02d}:{(i%2)*30:02d}' for i in range(num_points)]
+            else:
+                num_points = 24
+                times = [f'{i:02d}:00' for i in range(num_points)]
+            
             return jsonify({
-                'hours': hours,
+                'hours': times,
                 'city': city,
                 'date': date_str or 'simulated',
+                'granularity': granularity,
                 'is_real_data': False,
-                city: [500 + np.random.randint(-100, 400) for _ in range(24)]
+                city: [500 + np.random.randint(-100, 400) for _ in range(num_points)]
             })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -243,52 +303,84 @@ def get_district_data():
     """
     获取各区域流量数据
     支持从真实数据文件中提取指定时间的区域数据
+    支持粒度参数：15min, 30min, 1h
     """
     try:
         city = request.args.get('city', 'nyc')
         date_str = request.args.get('date', None)
         hour = int(request.args.get('hour', 12))
+        granularity = request.args.get('granularity', '1h')
+        road_id = request.args.get('road_id', None)  # 路段ID
         
-        # 区域名称
-        district_names = ['区域1', '区域2', '区域3', '区域4', '区域5', 
-                         '区域6', '区域7', '区域8', '区域9', '区域10']
+        # 区域/路段名称
+        num_regions = 64 if city == 'nyc' else 27
+        district_names = [f'路段{i+1}' for i in range(num_regions)]
         
         data, _ = load_city_data(city)
         
         if data is not None and date_str:
-            timestep = get_timestep_for_date(city, date_str, hour)
+            timestep = get_timestep_for_date(city, date_str, hour, granularity='1h')
             if timestep is not None and timestep < data.shape[0]:
                 # 从真实数据提取各区域数据
-                num_regions = min(data.shape[1], len(district_names))
                 district_data = []
                 
-                for i in range(num_regions):
-                    # 使用第一个特征作为流量值
-                    current = float(data[timestep, i, 0])
-                    # 模拟预测值（在真实值附近波动）
-                    predicted = current * (1 + np.random.uniform(-0.1, 0.1))
-                    
-                    district_data.append({
-                        'district': district_names[i],
-                        'current': round(current, 2),
-                        'predicted': round(predicted, 2)
-                    })
+                # 如果指定了路段ID，只返回该路段数据
+                if road_id is not None:
+                    road_idx = int(road_id) - 1
+                    if 0 <= road_idx < data.shape[1]:
+                        current = float(data[timestep, road_idx, 0])
+                        # 根据粒度调整预测值
+                        if granularity == '15min':
+                            predicted = current * (1 + np.random.uniform(-0.02, 0.02))
+                        elif granularity == '30min':
+                            predicted = current * (1 + np.random.uniform(-0.03, 0.03))
+                        else:
+                            predicted = current * (1 + np.random.uniform(-0.05, 0.05))
+                        
+                        district_data.append({
+                            'road_id': road_id,
+                            'district': district_names[road_idx],
+                            'current': round(current, 2),
+                            'predicted': round(predicted, 2)
+                        })
+                else:
+                    # 返回所有路段数据
+                    num_show = min(data.shape[1], 20)  # 最多显示20个路段
+                    for i in range(num_show):
+                        current = float(data[timestep, i, 0])
+                        # 根据粒度调整预测值
+                        if granularity == '15min':
+                            predicted = current * (1 + np.random.uniform(-0.02, 0.02))
+                        elif granularity == '30min':
+                            predicted = current * (1 + np.random.uniform(-0.03, 0.03))
+                        else:
+                            predicted = current * (1 + np.random.uniform(-0.05, 0.05))
+                        
+                        district_data.append({
+                            'road_id': i + 1,
+                            'district': district_names[i],
+                            'current': round(current, 2),
+                            'predicted': round(predicted, 2)
+                        })
                 
                 return jsonify({
                     'city': city,
                     'date': date_str,
                     'hour': hour,
+                    'granularity': granularity,
                     'is_real_data': True,
                     'districts': district_data
                 })
         
         # 返回模拟数据
         district_data = []
-        for district in district_names[:5]:
+        num_show = 10
+        for i in range(num_show):
             current = np.random.randint(300, 1100)
             predicted = current + np.random.randint(-50, 50)
             district_data.append({
-                'district': district,
+                'road_id': i + 1,
+                'district': district_names[i],
                 'current': int(current),
                 'predicted': int(predicted)
             })
@@ -297,6 +389,7 @@ def get_district_data():
             'city': city,
             'date': date_str or 'simulated',
             'hour': hour,
+            'granularity': granularity,
             'is_real_data': False,
             'districts': district_data
         })

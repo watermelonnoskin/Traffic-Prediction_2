@@ -23,6 +23,14 @@
           </select>
         </div>
         <div class="control-group">
+          <label>粒度</label>
+          <select v-model="selectedGranularity" @change="updateData" class="control-select">
+            <option value="1h">⏰ 1小时</option>
+            <option value="30min">⏱️ 30分钟</option>
+            <option value="15min">⚡ 15分钟</option>
+          </select>
+        </div>
+        <div class="control-group">
           <label>日期</label>
           <input 
             type="date" 
@@ -33,18 +41,28 @@
             class="date-picker"
           />
         </div>
+        <div class="control-group">
+          <label>路段</label>
+          <select v-model="selectedRoadId" @change="updateData" class="control-select">
+            <option value="">全部路段</option>
+            <option v-for="road in availableRoads" :key="road.id" :value="road.id">
+              {{ road.name }}
+            </option>
+          </select>
+        </div>
         <div v-if="loading" class="loading-indicator">
           <span class="spinner"></span>
           加载中...
         </div>
-        <div v-else-if="dataInfo.isRealData" class="data-badge real">
-          <span class="badge-icon">✓</span>
-          真实数据
-        </div>
-        <div v-else class="data-badge simulated">
-          <span class="badge-icon">~</span>
-          模拟数据
-        </div>
+        <button 
+          v-else 
+          class="data-toggle-btn" 
+          @click="toggleDataSource"
+          :class="{ 'real': dataInfo.isRealData, 'simulated': !dataInfo.isRealData }"
+        >
+          <span class="badge-icon">{{ dataInfo.isRealData ? '✓' : '~' }}</span>
+          {{ dataInfo.isRealData ? '真实数据' : '模拟数据' }}
+        </button>
       </div>
     </header>
 
@@ -86,27 +104,9 @@
         <div class="chart-container">
           <div class="chart-header">
             <h3>📈 交通流量趋势</h3>
-            <span class="chart-subtitle">24小时流量变化</span>
+            <span class="chart-subtitle">{{ getGranularityLabel() }}流量变化</span>
           </div>
           <v-chart :option="lineChartOption" class="chart-body" />
-        </div>
-
-        <!-- 区域流量对比图 -->
-        <div class="chart-container">
-          <div class="chart-header">
-            <h3>🏘️ 区域流量对比</h3>
-            <span class="chart-subtitle">各区域当前与预测流量</span>
-          </div>
-          <v-chart :option="barChartOption" class="chart-body" />
-        </div>
-
-        <!-- 热力图 -->
-        <div class="chart-container full-width">
-          <div class="chart-header">
-            <h3>🔥 交通流量热力图</h3>
-            <span class="chart-subtitle">一周7天×24小时流量分布</span>
-          </div>
-          <v-chart :option="heatmapOption" class="chart-body heatmap-body" />
         </div>
 
         <!-- 模型性能对比 -->
@@ -118,8 +118,17 @@
           <v-chart :option="pieChartOption" class="chart-body" />
         </div>
 
+        <!-- 热力图 -->
+        <div class="chart-container full-width">
+          <div class="chart-header">
+            <h3>🔥 交通流量热力图</h3>
+            <span class="chart-subtitle">一周7天×24小时流量分布</span>
+          </div>
+          <v-chart :option="heatmapOption" class="chart-body heatmap-body" />
+        </div>
+
         <!-- 预测vs实际 -->
-        <div class="chart-container">
+        <div class="chart-container full-width">
           <div class="chart-header">
             <h3>🎯 预测 vs 实际</h3>
             <span class="chart-subtitle">预测准确性分析</span>
@@ -138,10 +147,13 @@ export default {
     return {
       selectedCity: 'nyc',
       selectedModel: 'myplan',
-      selectedDate: '2014-01-01',  // 默认日期
-      minDate: '2014-01-01',
-      maxDate: '2014-01-31',
+      selectedGranularity: '1h',  // 默认1小时粒度
+      selectedRoadId: '',  // 默认全部路段
+      selectedDate: '2016-01-01',  // 默认日期
+      minDate: '2016-01-01',
+      maxDate: '2016-01-31',
       availableDates: [],
+      availableRoads: [],  // 可用路段列表
       trafficData: [],
       lineChartOption: {},
       barChartOption: {},
@@ -157,6 +169,7 @@ export default {
     }
   },
   mounted() {
+    this.updateAvailableRoads()
     this.fetchDataInfo()
   },
   methods: {
@@ -543,9 +556,9 @@ export default {
           }
         },
         grid: {
-          height: '75%',
+          height: '70%',
           top: '15%',
-          bottom: '15%'
+          bottom: '20%'
         },
         xAxis: {
           type: 'category',
@@ -571,7 +584,7 @@ export default {
           calculable: true,
           orient: 'horizontal',
           left: 'center',
-          bottom: '3%',
+          bottom: '5%',
           textStyle: {
             color: '#333'
           },
@@ -789,7 +802,40 @@ export default {
     async onCityChange() {
       // 城市改变时重新获取数据信息
       await this.fetchDataInfo()
+      // 更新可用路段列表
+      this.updateAvailableRoads()
       await this.fetchDataFromAPI()
+    },
+
+    updateAvailableRoads() {
+      // 根据城市生成路段列表
+      const numRoads = this.selectedCity === 'nyc' ? 64 : 27
+      this.availableRoads = Array.from({ length: numRoads }, (_, i) => ({
+        id: i + 1,
+        name: `路段${i + 1}`
+      }))
+      // 重置路段选择
+      this.selectedRoadId = ''
+    },
+
+    getGranularityLabel() {
+      const labels = {
+        '1h': '24小时',
+        '30min': '48点（30分钟）',
+        '15min': '96点（15分钟）'
+      }
+      return labels[this.selectedGranularity] || '24小时'
+    },
+
+    toggleDataSource() {
+      // 切换数据源
+      this.dataInfo.isRealData = !this.dataInfo.isRealData
+      if (this.dataInfo.isRealData) {
+        this.fetchDataFromAPI()
+      } else {
+        this.generateMockData()
+        this.initCharts()
+      }
     },
 
     async updateData() {
@@ -863,13 +909,14 @@ export default {
     },
 
     async fetchTrafficFlow() {
-      const response = await fetch(`${this.apiUrl}/traffic/flow?city=${this.selectedCity}&date=${this.selectedDate}`)
+      const response = await fetch(`${this.apiUrl}/traffic/flow?city=${this.selectedCity}&date=${this.selectedDate}&granularity=${this.selectedGranularity}`)
       if (!response.ok) throw new Error('Failed to fetch traffic flow data')
       return await response.json()
     },
 
     async fetchDistrictData() {
-      const response = await fetch(`${this.apiUrl}/traffic/district?city=${this.selectedCity}&date=${this.selectedDate}&hour=12`)
+      const roadParam = this.selectedRoadId ? `&road_id=${this.selectedRoadId}` : ''
+      const response = await fetch(`${this.apiUrl}/traffic/district?city=${this.selectedCity}&date=${this.selectedDate}&hour=12&granularity=${this.selectedGranularity}${roadParam}`)
       if (!response.ok) throw new Error('Failed to fetch district data')
       return await response.json()
     },
@@ -938,8 +985,8 @@ export default {
 <style scoped>
 .traffic-dashboard {
   min-height: 100vh;
-  padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 35px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
@@ -948,75 +995,91 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 25px;
-  padding: 25px 30px;
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(20px);
+  margin-bottom: 30px;
+  padding: 30px 35px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .header-left {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 
 .dashboard-header h1 {
-  color: #2c3e50;
-  font-size: 2.2rem;
+  color: #1a1a2e;
+  font-size: 2.4rem;
   margin: 0;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
-  color: #7f8c8d;
-  font-size: 0.9rem;
+  color: #6b7280;
+  font-size: 0.95rem;
   font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
 /* 控制栏样式 */
 .controls {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
 .control-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .control-group label {
-  font-size: 0.75rem;
-  color: #7f8c8d;
-  font-weight: 600;
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
 .control-select, .date-picker {
-  padding: 12px 16px;
-  border: 2px solid #e8ecf1;
-  border-radius: 12px;
+  padding: 14px 18px;
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
   background: white;
   font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  min-width: 130px;
+  min-width: 140px;
   outline: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .control-select:hover, .date-picker:hover {
   border-color: #667eea;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.25);
+  transform: translateY(-2px);
 }
 
 .control-select:focus, .date-picker:focus {
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+}
+
+.control-select option {
+  padding: 10px;
+  font-weight: 500;
 }
 
 /* 加载和状态指示器 */
@@ -1072,131 +1135,180 @@ export default {
   font-size: 14px;
 }
 
+/* 数据切换按钮 */
+.data-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  outline: none;
+  min-width: 130px;
+}
+
+.data-toggle-btn.real {
+  background: linear-gradient(135deg, #91cc75, #7cb85f);
+  color: white;
+  box-shadow: 0 4px 12px rgba(145, 204, 117, 0.3);
+}
+
+.data-toggle-btn.simulated {
+  background: linear-gradient(135deg, #fac858, #f5a623);
+  color: white;
+  box-shadow: 0 4px 12px rgba(250, 200, 88, 0.3);
+}
+
+.data-toggle-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.data-toggle-btn:active {
+  transform: translateY(0);
+}
+
 /* 统计概览卡片 */
 .stats-overview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 25px;
+  gap: 24px;
+  margin-bottom: 30px;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 22px 28px;
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 20px;
+  padding: 26px 32px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   flex: 1;
   min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  transform: translateY(-6px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  border-color: rgba(102, 126, 234, 0.3);
 }
 
 .stat-icon {
-  font-size: 1.8rem;
-  width: 55px;
-  height: 55px;
-  min-width: 55px;
-  min-height: 55px;
+  font-size: 2rem;
+  width: 60px;
+  height: 60px;
+  min-width: 60px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
   flex-shrink: 0;
   line-height: 1;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
 }
 
 .stat-content {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
 .stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #2c3e50;
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #1a1a2e;
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .stat-label {
-  font-size: 0.8rem;
-  color: #7f8c8d;
-  font-weight: 500;
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-weight: 600;
   white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 
 /* 图表网格 */
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 25px;
+  gap: 28px;
 }
 
 /* 图表容器 */
 .chart-container {
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 20px;
-  padding: 25px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 30px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.12);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .chart-container:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.15);
+  transform: translateY(-8px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  border-color: rgba(102, 126, 234, 0.3);
 }
 
 .chart-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 18px;
-  padding-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
   border-bottom: 2px solid #f0f3f7;
 }
 
 .chart-header h3 {
-  color: #2c3e50;
+  color: #1a1a2e;
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 800;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   line-height: 1.3;
 }
 
 .chart-subtitle {
-  color: #95a5a6;
-  font-size: 0.8rem;
+  color: #6b7280;
+  font-size: 0.85rem;
   font-weight: 500;
-  margin-left: 30px;
+  margin-left: 32px;
+  letter-spacing: 0.3px;
 }
 
 .chart-body {
   flex: 1;
-  min-height: 320px;
+  min-height: 340px;
 }
 
 .chart-body.heatmap-body {
-  min-height: 400px;
+  min-height: 420px;
 }
 
 .full-width {
@@ -1215,10 +1327,18 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .traffic-dashboard {
+    padding: 20px;
+  }
+  
   .dashboard-header {
     flex-direction: column;
     gap: 25px;
-    padding: 20px;
+    padding: 25px;
+  }
+  
+  .dashboard-header h1 {
+    font-size: 1.9rem;
   }
   
   .controls {
@@ -1227,20 +1347,29 @@ export default {
     gap: 15px;
   }
   
-  .stats-overview {
-    grid-template-columns: 1fr;
+  .control-select, .date-picker {
+    min-width: 120px;
   }
   
-  .dashboard-header h1 {
-    font-size: 1.8rem;
+  .stats-overview {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
   
   .stat-card {
-    padding: 15px 20px;
+    padding: 20px 24px;
   }
   
   .stat-value {
-    font-size: 1.3rem;
+    font-size: 1.5rem;
+  }
+  
+  .chart-grid {
+    gap: 20px;
+  }
+  
+  .chart-container {
+    padding: 24px;
   }
 }
 </style>
