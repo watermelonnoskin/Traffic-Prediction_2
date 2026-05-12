@@ -1,17 +1,19 @@
 <template>
   <div id="app">
-    <TrafficDashboard />
+    <LoginPage v-if="!isLoggedIn" @login-success="handleLoginSuccess" />
+    <TrafficDashboard v-else />
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
+import LoginPage from './components/LoginPage.vue'
 import TrafficDashboard from './components/TrafficDashboard.vue'
 
-export default {
-  name: 'App',
-  components: {
-    TrafficDashboard
-  }
+const isLoggedIn = ref(false)
+
+const handleLoginSuccess = () => {
+  isLoggedIn.value = true
 }
 </script>
 
